@@ -1,0 +1,47 @@
+import pandas as pd
+import numpy as np 
+from matplotlib import pyplot
+
+url_LondonHousePrices = 'https://data.london.gov.uk/download/uk-house-price-index/70ac0766-8902-4eb5-aab5-01951aaed773/UK%20House%20price%20index.xls\n'
+properties = pd.read_excel(url_LondonHousePrices, sheet_name='Average price', index_col= None, parse_dates=True)
+#You  also might find you need to assign the values of the first row to your column headings
+#Hint: recall the .columns feature of DataFrames, as well as the iloc[] method
+
+properties = properties.transpose()
+
+properties = properties.reset_index()
+properties.columns = properties.iloc[0]
+
+properties = properties.drop(0)
+properties = properties.rename(columns = {'Unnamed: 0':'London_Borough', pd.NaT: 'ID'})
+properties = properties.dropna(how = 'any')
+properties = properties.drop(properties.index[:1])
+properties = properties.drop(properties.index[33:])
+properties = properties.apply(pd.to_numeric, errors = 'ignore')
+
+clean_properties = pd.melt(properties, id_vars = ['London_Borough', 'ID'])
+clean_properties=clean_properties.rename(columns = {0:'Month', 'value':'Average_price'})
+line_plot_CP = clean_properties.plot.line(x='Month', y='Average_price')
+clean_properties['Year'] = clean_properties.Month.apply(lambda r: r.year)
+dfg = clean_properties.groupby(['London_Borough', 'Year']).mean()
+dfg = dfg.reset_index()
+Camden_Yearly = dfg[dfg['London_Borough']=='Camden'] 
+
+def create_price_ratio(d):
+    y1998 = float(d['Average_price'][d['Year']==1998])
+    y2018 = float(d['Average_price'][d['Year']==2018])
+    ratio = [y2018/y1998]
+    return(np.around(ratio, decimals = 4))
+    
+    final ={}
+for x in dfg['London_Borough'].unique():
+    final[x] = create_price_ratio(dfg[dfg['London_Borough'] == x])
+
+final = pd.DataFrame(final)
+
+final  = final.transpose()
+final = final.reset_index()
+final = final.sort_values(by = 0, ascending=False)
+final = final.rename(columns = {0: 'Percentage Increase'})
+print(final)
+final.describe()
