@@ -35,9 +35,11 @@ exploring the data, and getting acquainted with the 3 tables. */
 /* Q1: Some of the facilities charge a fee to members, but some do not.
 Write a SQL query to produce a list of the names of the facilities that do. */
 
+SELECT name FROM `Facilities` WHERE membercost > 0;
 
 /* Q2: How many facilities do not charge a fee to members? */
 
+5
 
 /* Q3: Write an SQL query to show a list of facilities that charge a fee to members,
 where the fee is less than 20% of the facility's monthly maintenance cost.
@@ -45,25 +47,46 @@ Return the facid, facility name, member cost, and monthly maintenance of the
 facilities in question. */
 
 
+Select facid, name, membercost, monthlymaintenance
+from Facilities
+Where membercost < (0.2*monthlymaintenance);
+
 /* Q4: Write an SQL query to retrieve the details of facilities with ID 1 and 5.
 Try writing the query without using the OR operator. */
 
+
+Select *
+from Facilities
+Where facid = 1 or facid = 5;
 
 /* Q5: Produce a list of facilities, with each labelled as
 'cheap' or 'expensive', depending on if their monthly maintenance cost is
 more than $100. Return the name and monthly maintenance of the facilities
 in question. */
 
+Select *,
+case WHEN monthlymaintenance > 100 then 'expensive'
+ 	else 'cheap' end AS price
+from Facilities;
 
 /* Q6: You'd like to get the first and last name of the last member(s)
 who signed up. Try not to use the LIMIT clause for your solution. */
 
+SELECT surname, firstname FROM `Members`;
 
 /* Q7: Produce a list of all members who have used a tennis court.
 Include in your output the name of the court, and the name of the member
 formatted as a single column. Ensure no duplicate data, and order by
 the member name. */
 
+select distinct concat(mems.firstname, ' ', mems.surname) as member, facs.name as facility
+from Members as mems
+inner join Bookings as bks
+	on mems.memid = bks.memid
+inner join Facilities as facs
+	on bks.facid = facs.facid
+where bks.facid = 1 or bks.facid = 0
+order by member;
 
 /* Q8: Produce a list of bookings on the day of 2012-09-14 which
 will cost the member (or guest) more than $30. Remember that guests have
@@ -72,9 +95,50 @@ the guest user's ID is always 0. Include in your output the name of the
 facility, the name of the member formatted as a single column, and the cost.
 Order by descending cost, and do not use any subqueries. */
 
+select facs.name as facility, concat(mems.firstname, ' ', mems.surname) as member, 
+	case 
+		when mems.memid = 0 then
+			bks.slots*facs.guestcost
+		else
+			bks.slots*facs.membercost
+	end as cost
+        from Members  as mems                
+                inner join Bookings as bks
+                        on mems.memid = bks.memid
+                inner join Facilities as facs
+                        on bks.facid = facs.facid
+        where
+		bks.starttime >= '2012-09-14' and 
+		bks.starttime < '2012-09-15' and (
+			(mems.memid = 0 and bks.slots*facs.guestcost > 30) or
+			(mems.memid != 0 and bks.slots*facs.membercost > 30)
+		)
+order by cost desc;
+
 
 /* Q9: This time, produce the same result as in Q8, but using a subquery. */
 
+SELECT * FROM (
+select facs.name as facility, concat(mems.firstname, ' ', mems.surname) as member, 
+	case 
+		when mems.memid = 0 then
+			bks.slots*facs.guestcost
+		else
+			bks.slots*facs.membercost
+	end as cost
+        from Members  as mems                
+                inner join Bookings as bks
+                        on mems.memid = bks.memid
+                inner join Facilities as facs
+                        on bks.facid = facs.facid
+        where
+		bks.starttime >= '2012-09-14' and 
+		bks.starttime < '2012-09-15' and (
+			(mems.memid = 0 and bks.slots*facs.guestcost > 30) or
+			(mems.memid != 0 and bks.slots*facs.membercost > 30)
+		)
+order by cost desc) as cost
+WHERE cost>30;
 
 /* PART 2: SQLite
 
@@ -86,11 +150,66 @@ QUESTIONS:
 The output of facility name and total revenue, sorted by revenue. Remember
 that there's a different cost for guests and members! */
 
+engine = create_engine('sqlite:///sqlite_db_pythonsqlite.db')
+
+with engine.connect() as con:
+    rs = con.execute('''SELECT name, SUM(
+        CASE WHEN memid =0
+        THEN guestcost * slots
+        ELSE membercost * slots
+        END ) AS total_revenue
+        FROM Facilities
+        INNER JOIN Bookings ON Facilities.facid = Bookings.facid
+        GROUP BY name
+        HAVING total_revenue < 1000
+        ORDER BY total_revenue;''')
+        
 /* Q11: Produce a report of members and who recommended them in alphabetic surname,firstname order */
 
+engine = create_engine('sqlite:///sqlite_db_pythonsqlite.db')
+
+with engine.connect() as con:
+    rs = con.execute('''SELECT  M1.firstname || ' ' || M1.surname || ' ' || 'recommended by' || ' ' || M2.firstname || ' ' || M2.surname
+        AS members_recommended
+        FROM Members AS M1
+        LEFT JOIN Members AS M2 ON M1.recommendedby = M2.memid
+        WHERE M2.memid != 0
+        ORDER BY M1.surname, M1.firstname;''')
 
 /* Q12: Find the facilities with their usage by member, but not guests */
 
+engine = create_engine('sqlite:///sqlite_db_pythonsqlite.db')
+
+with engine.connect() as con:
+
+        SELECT F.name AS facility, members_only.bookings AS members_usage
+        FROM (
+        SELECT facid, name
+        FROM Facilities
+        ) AS F
+        INNER JOIN (
+        SELECT facid, COUNT( * ) AS bookings
+        FROM Bookings
+        WHERE memid != 0
+        GROUP BY facid
+        ) AS members_only ON F.facid = members_only.facid
 
 /* Q13: Find the facilities usage by month, but not guests */
+
+
+engine = create_engine('sqlite:///sqlite_db_pythonsqlite.db')
+
+with engine.connect() as con:
+
+        SELECT F.name AS facility, members_only.monthly_period, members_only.bookings AS members_usage
+        FROM (
+        SELECT facid, name
+        FROM Facilities
+        ) AS F
+        INNER JOIN (
+        SELECT facid, strftime('%Y-%m', starttime) AS monthly_period, COUNT( * ) AS bookings
+        FROM Bookings
+        WHERE memid != 0
+        GROUP BY facid, monthly_period
+        ) AS members_only ON F.facid = members_only.facid
 
